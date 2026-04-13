@@ -27,5 +27,5 @@ Clipboard Manager is a macOS application that stores clipboard history on your d
 
 ## Contact
 
-- Support URL: [YOUR SUPPORT URL]
-- Contact Email: [YOUR EMAIL]
+- Support URL: https://github.com/sahinaykkt/Clipboard-Manager/issues
+- Contact Email: sahinaykkt@gmail.com
