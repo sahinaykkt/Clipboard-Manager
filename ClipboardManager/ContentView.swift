@@ -5,6 +5,7 @@ struct ContentView: View {
     @ObservedObject var monitor = ClipboardMonitor.shared
     @State private var searchText = ""
     @State private var selectedFilter: FilterType = .all
+    @State private var selectedID: UUID? = nil
     @State private var copiedID: UUID? = nil
     
     enum FilterType: String, CaseIterable {
@@ -62,7 +63,7 @@ struct ContentView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
                     .font(.system(size: 13))
-                TextField("Search... (⌘F)", text: $searchText)
+                TextField("Search...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
                 if !searchText.isEmpty {
@@ -113,14 +114,9 @@ struct ContentView: View {
                         ForEach(filtered) { item in
                             ClipboardRow(
                                 item: item,
+                                selectedID: $selectedID,
                                 copiedID: $copiedID,
-                                onCopy: {
-                                    monitor.copyToClipboard(item)
-                                    withAnimation { copiedID = item.id }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                        if copiedID == item.id { copiedID = nil }
-                                    }
-                                },
+                                onCopy: { copyItem(item) },
                                 onPin: { monitor.togglePin(item) },
                                 onDelete: { monitor.deleteItem(item) }
                             )
@@ -144,10 +140,20 @@ struct ContentView: View {
         }
         .frame(minWidth: 360, minHeight: 480)
     }
+
+    private func copyItem(_ item: ClipboardItem) {
+        selectedID = item.id
+        monitor.copyToClipboard(item)
+        withAnimation { copiedID = item.id }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            if copiedID == item.id { copiedID = nil }
+        }
+    }
     
     
     struct ClipboardRow: View {
         let item: ClipboardItem
+        @Binding var selectedID: UUID?
         @Binding var copiedID: UUID?
         let onCopy: () -> Void
         let onPin: () -> Void
@@ -155,40 +161,55 @@ struct ContentView: View {
         
         @State private var isHovered = false
         
+        var isSelected: Bool { selectedID == item.id }
         var isCopied: Bool { copiedID == item.id }
         
         var body: some View {
             HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(item.type == .image ? Color.purple.opacity(0.12) : Color.blue.opacity(0.1))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: item.type == .image ? "photo" : "doc.text")
-                        .font(.system(size: 14))
-                        .foregroundColor(item.type == .image ? .purple : .blue)
-                }
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    if item.type == .image, let img = item.image {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 60)
-                            .cornerRadius(4)
-                    } else {
-                        Text(item.preview)
-                            .font(.system(size: 12))
-                            .lineLimit(2)
-                            .foregroundColor(.primary)
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(item.type == .image ? Color.purple.opacity(0.12) : Color.blue.opacity(0.1))
+                            .frame(width: 36, height: 36)
+                        Image(systemName: item.type == .image ? "photo" : "doc.text")
+                            .font(.system(size: 14))
+                            .foregroundColor(item.type == .image ? .purple : .blue)
                     }
-                    Text(item.timeAgo)
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        if item.type == .image, let img = item.image {
+                            Image(nsImage: img)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 60)
+                                .cornerRadius(4)
+                        } else {
+                            Text(item.preview)
+                                .font(.system(size: 12))
+                                .lineLimit(2)
+                                .foregroundColor(.primary)
+                        }
+                        Text(item.timeAgo)
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    if item.isPinned && !isHovered && !isSelected {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.orange)
+                    }
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedID = item.id
+                    onCopy()
+                }
+                .help("Click to copy to clipboard")
                 
-                Spacer()
-                
-                if isHovered || isCopied {
+                if isHovered || isCopied || isSelected {
                     HStack(spacing: 6) {
                         if isCopied {
                             Image(systemName: "checkmark.circle.fill")
@@ -222,25 +243,28 @@ struct ContentView: View {
                     }
                     .transition(.opacity)
                 }
-                
-                if item.isPinned && !isHovered {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.orange)
-                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 0)
-                    .fill(isHovered ? Color(NSColor.selectedContentBackgroundColor).opacity(0.15) : Color.clear)
+                    .fill(rowBackgroundColor)
             )
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
-            .onTapGesture(count: 2) { onCopy() }
-            .help("Double click: copy to clipboard")
             .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
             .animation(.easeInOut(duration: 0.2), value: isCopied)
+        }
+
+        private var rowBackgroundColor: Color {
+            if isSelected {
+                return Color(NSColor.selectedContentBackgroundColor).opacity(0.22)
+            }
+            if isHovered {
+                return Color(NSColor.selectedContentBackgroundColor).opacity(0.15)
+            }
+            return .clear
         }
     }
 }

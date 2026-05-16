@@ -1,20 +1,41 @@
 import SwiftUI
 import AppKit
 
-enum ClipboardItemType {
+enum ClipboardItemType: String, Codable {
     case text, image
 }
 
-struct ClipboardItem: Identifiable, Equatable {
-    let id = UUID()
+struct ClipboardItem: Identifiable, Equatable, Codable {
+    let id: UUID
     let type: ClipboardItemType
     let text: String?
-    let image: NSImage?
+    let imageData: Data?
     let date: Date
     var isPinned: Bool = false
 
+    init(
+        id: UUID = UUID(),
+        type: ClipboardItemType,
+        text: String?,
+        image: NSImage?,
+        date: Date,
+        isPinned: Bool = false
+    ) {
+        self.id = id
+        self.type = type
+        self.text = text
+        self.imageData = image?.tiffRepresentation
+        self.date = date
+        self.isPinned = isPinned
+    }
+
     static func == (lhs: ClipboardItem, rhs: ClipboardItem) -> Bool {
         lhs.id == rhs.id
+    }
+
+    var image: NSImage? {
+        guard let imageData else { return nil }
+        return NSImage(data: imageData)
     }
 
     var preview: String {
@@ -47,7 +68,21 @@ class ClipboardMonitor: ObservableObject {
     private var timer: Timer?
     private var lastChangeCount: Int = NSPasteboard.general.changeCount
 
+    private let settings = AppSettings.shared
+    private let persistenceURL: URL
+
+    private init() {
+        let appSupportDirectory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let containerDirectory = appSupportDirectory
+            .appendingPathComponent(Bundle.main.bundleIdentifier ?? "ClipboardManager", isDirectory: true)
+        try? FileManager.default.createDirectory(at: containerDirectory, withIntermediateDirectories: true)
+        persistenceURL = containerDirectory.appendingPathComponent("ClipboardHistory.json")
+        loadItems()
+        applySettings()
+    }
+
     func startMonitoring() {
+        guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
             self?.checkClipboard()
         }
@@ -55,6 +90,7 @@ class ClipboardMonitor: ObservableObject {
 
     func stopMonitoring() {
         timer?.invalidate()
+        timer = nil
     }
 
     private func checkClipboard() {
@@ -78,12 +114,11 @@ class ClipboardMonitor: ObservableObject {
     private func addItem(_ item: ClipboardItem) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            var unpinned = self.items.filter { !$0.isPinned }
+            let maxItems = max(self.settings.maxItems, 1)
+            let retainedUnpinned = Array(self.items.filter { !$0.isPinned }.prefix(max(maxItems - 1, 0)))
             let pinned = self.items.filter { $0.isPinned }
-            if unpinned.count >= 195 {
-                unpinned = Array(unpinned.prefix(195))
-            }
-            self.items = [item] + unpinned + pinned
+            self.items = [item] + retainedUnpinned + pinned
+            self.applySettings()
         }
     }
 
@@ -105,15 +140,56 @@ class ClipboardMonitor: ObservableObject {
 
     func deleteItem(_ item: ClipboardItem) {
         items.removeAll { $0.id == item.id }
+        persistItems()
     }
 
     func togglePin(_ item: ClipboardItem) {
         if let idx = items.firstIndex(of: item) {
             items[idx].isPinned.toggle()
+            persistItems()
         }
     }
 
     func clearAll() {
         items.removeAll { !$0.isPinned }
+        persistItems()
+    }
+
+    func applySettings() {
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -max(settings.retentionDays, 1), to: Date()) ?? .distantPast
+        let pinned = items.filter { $0.isPinned }
+        let unpinned = items
+            .filter { !$0.isPinned }
+            .filter { $0.date >= cutoffDate }
+        let limitedUnpinned = Array(unpinned.prefix(max(settings.maxItems, 1)))
+        let updatedItems = limitedUnpinned + pinned
+
+        if updatedItems != items {
+            items = updatedItems
+        }
+
+        persistItems()
+    }
+
+    private func loadItems() {
+        guard let data = try? Data(contentsOf: persistenceURL) else { return }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        guard let storedItems = try? decoder.decode([ClipboardItem].self, from: data) else { return }
+        items = storedItems.sorted { $0.date > $1.date }
+    }
+
+    private func persistItems() {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+
+        do {
+            let data = try encoder.encode(items)
+            try data.write(to: persistenceURL, options: .atomic)
+        } catch {
+            NSLog("Failed to persist clipboard history: \(error.localizedDescription)")
+        }
     }
 }

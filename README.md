@@ -1,15 +1,19 @@
 # Clipboard Manager
 
-A lightweight clipboard history manager for macOS. Automatically saves everything you copy — text and images — so you can find and reuse it from the menu bar.
+A lightweight clipboard history manager for macOS. It automatically saves copied text and images, keeps them across app relaunches and system restarts, and lets you reuse them directly from the menu bar.
+
+App Store: [Clipboard Manager - Simple](https://apps.apple.com/tr/app/clipboard-manager-simple/id6762162041?l=tr&mt=12)
 
 ## Features
 
-- Clipboard history for text and images
-- Menu bar access for instant retrieval
-- Search and filter your history
-- Pin important items to keep them at the top
-- Double-click any item to copy it back to the clipboard
-- Up to 200 items stored locally on device
+- Persistent clipboard history for text and images
+- Single-click copy from the menu bar list
+- Search and filter history by type
+- Pin important items to keep them available
+- Launch at login enabled by default after install
+- Preferences for startup behavior, retention days, and maximum history size
+- Right-click menu bar context menu with Preferences and Quit
+- Local-only storage with configurable history limits
 
 ## Requirements
 
@@ -24,6 +28,13 @@ A lightweight clipboard history manager for macOS. Automatically saves everythin
    ```
 2. Select your team under **Signing & Capabilities**.
 3. Press **Cmd+R** to build and run.
+
+## Usage
+
+- Left-click the menu bar icon to open clipboard history.
+- Click any item once to copy it back to the clipboard.
+- Right-click the menu bar icon to open Preferences or quit the app.
+- Use Preferences to change launch at login, retention period, and maximum saved items.
 
 ## App Store Submission Checklist
 
@@ -40,14 +51,15 @@ A lightweight clipboard history manager for macOS. Automatically saves everythin
 ClipboardManager/
 ├── ClipboardManager.xcodeproj/
 └── ClipboardManager/
+    ├── AppSettings.swift           # Persistent settings and launch-at-login handling
     ├── ClipboardManagerApp.swift   # App entry point, AppDelegate, menu bar setup
-    ├── ClipboardMonitor.swift      # Pasteboard monitor and data model
+    ├── ClipboardMonitor.swift      # Pasteboard monitor and persistent history storage
     ├── ContentView.swift           # Main UI
-    ├── Assets.xcassets             # App icons and accent color
+    ├── PreferencesView.swift       # Preferences window UI
     ├── ClipboardManager.entitlements
     └── Info.plist
 ```
 
 ## Privacy
 
-Clipboard Manager stores all data locally on the device. No data is uploaded, shared, or transmitted to any server. See `docs/PrivacyPolicy.md` for the full policy.
+Clipboard Manager stores all clipboard history locally on the device. No data is uploaded, shared, or transmitted to any server. See `docs/PrivacyPolicy.md` for the full policy.
