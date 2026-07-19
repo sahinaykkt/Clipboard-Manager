@@ -3,18 +3,23 @@ import AppKit
 
 struct ContentView: View {
     @ObservedObject var monitor = ClipboardMonitor.shared
+    @ObservedObject var settings = AppSettings.shared
     @State private var searchText = ""
     @State private var selectedFilter: FilterType = .all
     @State private var selectedID: UUID? = nil
     @State private var copiedID: UUID? = nil
-    
+
     enum FilterType: String, CaseIterable {
         case all = "All"
         case text = "Text"
         case image = "Image"
         case pinned = "Pinned"
     }
-    
+
+    private var selectedItem: ClipboardItem? {
+        filtered.first { $0.id == selectedID }
+    }
+
     var filtered: [ClipboardItem] {
         monitor.items.filter { item in
             let matchesFilter: Bool = {
@@ -109,27 +114,44 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 1) {
-                        ForEach(filtered) { item in
-                            ClipboardRow(
-                                item: item,
-                                selectedID: $selectedID,
-                                copiedID: $copiedID,
-                                onCopy: { copyItem(item) },
-                                onPin: { monitor.togglePin(item) },
-                                onDelete: { monitor.deleteItem(item) }
-                            )
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 1) {
+                            ForEach(filtered) { item in
+                                ClipboardRow(
+                                    item: item,
+                                    selectedID: $selectedID,
+                                    copiedID: $copiedID,
+                                    isCurrentClipboard: item.id == monitor.lastCopiedID,
+                                    onCopy: { copyItem(item) },
+                                    onPin: { monitor.togglePin(item) },
+                                    onDelete: { monitor.deleteItem(item) }
+                                )
+                                .id(item.id)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
+                    .onChange(of: selectedID) { id in
+                        guard let id else { return }
+                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                    }
                 }
             }
-            
+
             Divider()
-            
+
             HStack {
+                Button(action: openPreferences) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Preferences")
+
                 Spacer()
+
                 Button("Quit") { NSApp.terminate(nil) }
                     .font(.system(size: 11))
                     .buttonStyle(.plain)
@@ -139,6 +161,85 @@ struct ContentView: View {
             .padding(.vertical, 8)
         }
         .frame(minWidth: 360, minHeight: 480)
+        .background(KeyCaptureView { handleKey($0) })
+        .onAppear {
+            if selectedID == nil { selectedID = filtered.first?.id }
+        }
+    }
+
+    // MARK: - Keyboard handling
+
+    /// Returns true if the event was consumed.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        // Pin / unpin the selected item.
+        if let pin = settings.pinHotkey, pin.matches(event) {
+            if let item = selectedItem { monitor.togglePin(item) }
+            return true
+        }
+
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+
+        switch event.keyCode {
+        case 125: // Down arrow
+            moveSelection(by: 1)
+            return true
+        case 126: // Up arrow
+            moveSelection(by: -1)
+            return true
+        case 36, 76: // Return / keypad Enter
+            if let item = selectedItem { copyItem(item) }
+            return true
+        case 51: // Delete / Backspace
+            // Delete the selected item when not editing the search field
+            // (search empty), or always with Cmd held.
+            if modifiers.contains(.command) || searchText.isEmpty {
+                deleteSelected()
+                return true
+            }
+            return false // let it edit the search text
+        case 117: // Forward delete (fn + Delete)
+            deleteSelected()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func deleteSelected() {
+        guard let item = selectedItem else { return }
+        selectNeighbour(of: item)
+        monitor.deleteItem(item)
+    }
+
+    private func moveSelection(by delta: Int) {
+        let list = filtered
+        guard !list.isEmpty else { return }
+        guard let id = selectedID, let index = list.firstIndex(where: { $0.id == id }) else {
+            selectedID = delta > 0 ? list.first?.id : list.last?.id
+            return
+        }
+        let next = min(max(index + delta, 0), list.count - 1)
+        selectedID = list[next].id
+    }
+
+    /// Moves selection to a sensible neighbour before deleting `item`.
+    private func selectNeighbour(of item: ClipboardItem) {
+        let list = filtered
+        guard let index = list.firstIndex(where: { $0.id == item.id }) else { return }
+        if index + 1 < list.count {
+            selectedID = list[index + 1].id
+        } else if index - 1 >= 0 {
+            selectedID = list[index - 1].id
+        } else {
+            selectedID = nil
+        }
+    }
+
+    private func openPreferences() {
+        // Dispatch so the popover isn't mid-dismiss while we open the window.
+        DispatchQueue.main.async {
+            AppDelegate.shared?.showPreferencesWindow()
+        }
     }
 
     private func copyItem(_ item: ClipboardItem) {
@@ -148,19 +249,23 @@ struct ContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             if copiedID == item.id { copiedID = nil }
         }
+        if settings.closeOnCopy {
+            AppDelegate.shared?.dismissPopover()
+        }
     }
-    
-    
+
+
     struct ClipboardRow: View {
         let item: ClipboardItem
         @Binding var selectedID: UUID?
         @Binding var copiedID: UUID?
+        let isCurrentClipboard: Bool
         let onCopy: () -> Void
         let onPin: () -> Void
         let onDelete: () -> Void
-        
+
         @State private var isHovered = false
-        
+
         var isSelected: Bool { selectedID == item.id }
         var isCopied: Bool { copiedID == item.id }
         
@@ -250,11 +355,26 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 0)
                     .fill(rowBackgroundColor)
             )
+            .overlay(alignment: .leading) {
+                if isCurrentClipboard {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.green)
+                        .frame(width: 3)
+                        .padding(.vertical, 6)
+                        .transition(.opacity)
+                }
+            }
             .contentShape(Rectangle())
-            .onHover { isHovered = $0 }
+            .onHover { hovering in
+                isHovered = hovering
+                // Hovering makes the item the current selection so mouse and
+                // keyboard navigation share a single highlight.
+                if hovering { selectedID = item.id }
+            }
             .animation(.easeInOut(duration: 0.15), value: isHovered)
             .animation(.easeInOut(duration: 0.15), value: isSelected)
             .animation(.easeInOut(duration: 0.2), value: isCopied)
+            .animation(.easeInOut(duration: 0.2), value: isCurrentClipboard)
         }
 
         private var rowBackgroundColor: Color {
@@ -266,5 +386,43 @@ struct ContentView: View {
             }
             return .clear
         }
+    }
+}
+
+/// Installs a local key-down monitor that is only active while this view's
+/// window is key, so keyboard navigation works in the popover without
+/// intercepting events destined for other windows (e.g. Preferences).
+struct KeyCaptureView: NSViewRepresentable {
+    let handler: (NSEvent) -> Bool
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        context.coordinator.view = view
+        context.coordinator.handler = handler
+        context.coordinator.monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let coordinator = context.coordinator
+            guard let window = coordinator.view?.window, window.isKeyWindow else { return event }
+            return coordinator.handler(event) ? nil : event
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.handler = handler
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        if let monitor = coordinator.monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        coordinator.monitor = nil
+    }
+
+    final class Coordinator {
+        weak var view: NSView?
+        var monitor: Any?
+        var handler: (NSEvent) -> Bool = { _ in false }
     }
 }

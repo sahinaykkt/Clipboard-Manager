@@ -105,10 +105,10 @@
 			};
 			buildConfigurationList = A7000002 /* Build configuration list for PBXProject "ClipboardManager" */;
 			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = tr;
+			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				tr,
+				en,
 				Base,
 			);
 			mainGroup = A5000001;
@@ -280,7 +280,7 @@
 				CODE_SIGN_ENTITLEMENTS = ClipboardManager/ClipboardManager.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 77NX9XN2VL;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -296,7 +296,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aykutsahin.clipboardmanager.app;
 				PRODUCT_NAME = "Clipboard Manager";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -312,7 +312,7 @@
 				CODE_SIGN_ENTITLEMENTS = ClipboardManager/ClipboardManager.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 77NX9XN2VL;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -328,7 +328,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1;
+				MARKETING_VERSION = 1.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aykutsahin.clipboardmanager.app;
 				PRODUCT_NAME = "Clipboard Manager";
 				SWIFT_EMIT_LOC_STRINGS = YES;

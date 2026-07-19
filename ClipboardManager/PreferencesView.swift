@@ -3,6 +3,14 @@ import SwiftUI
 struct PreferencesView: View {
     @ObservedObject private var settings = AppSettings.shared
 
+    private static let integerFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .none
+        formatter.allowsFloats = false
+        formatter.minimum = 1
+        return formatter
+    }()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(spacing: 14) {
@@ -16,13 +24,34 @@ struct PreferencesView: View {
                 Divider()
 
                 settingRow(
+                    title: "Open Shortcut",
+                    description: "Global hotkey to show Clipboard Manager from anywhere.") {
+                        shortcutControl(binding: $settings.openHotkey)
+                    }
+
+                Divider()
+
+                settingRow(
+                    title: "Pin / Unpin Shortcut",
+                    description: "Pin or unpin the selected item while the window is open.") {
+                        shortcutControl(binding: $settings.pinHotkey)
+                    }
+
+                Divider()
+
+                settingRow(
+                    title: "Close After Copy",
+                    description: "Automatically close the window right after you copy an item.") {
+                        Toggle("", isOn: $settings.closeOnCopy)
+                            .labelsHidden()
+                    }
+
+                Divider()
+
+                settingRow(
                     title: "Retention Period",
                     description: "Remove unpinned history items older than this many days.") {
-                        Stepper(value: $settings.retentionDays, in: 1...3650) {
-                            Text("\(settings.retentionDays) days")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .frame(width: 160, alignment: .trailing)
+                        numberField(value: $settings.retentionDays, range: 1...3650, unit: "days")
                     }
 
                 Divider()
@@ -30,11 +59,7 @@ struct PreferencesView: View {
                 settingRow(
                     title: "Maximum History Items",
                     description: "Limit how many unpinned records are stored at once.") {
-                        Stepper(value: $settings.maxItems, in: 1...5000) {
-                            Text("\(settings.maxItems) items")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .frame(width: 160, alignment: .trailing)
+                        numberField(value: $settings.maxItems, range: 1...5000, unit: "items")
                     }
             }
             .padding(16)
@@ -46,7 +71,7 @@ struct PreferencesView: View {
             Spacer()
         }
         .padding(24)
-        .frame(width: 460, height: 240)
+        .frame(width: 480, height: 520)
     }
 
     @ViewBuilder
@@ -64,6 +89,40 @@ struct PreferencesView: View {
             Spacer(minLength: 16)
 
             control()
+        }
+    }
+
+    /// An editable number field paired with a stepper so the value can be typed
+    /// or adjusted with the arrows.
+    @ViewBuilder
+    private func numberField(value: Binding<Int>, range: ClosedRange<Int>, unit: String) -> some View {
+        HStack(spacing: 6) {
+            TextField("", value: value, formatter: Self.integerFormatter)
+                .textFieldStyle(.roundedBorder)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 60)
+            Text(unit)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            Stepper("", value: value, in: range)
+                .labelsHidden()
+        }
+    }
+
+    /// A shortcut recorder with a button to clear (disable) the shortcut.
+    @ViewBuilder
+    private func shortcutControl(binding: Binding<KeyCombo?>) -> some View {
+        HStack(spacing: 6) {
+            ShortcutRecorder(combo: binding)
+                .frame(width: 120, height: 24)
+            Button(action: { binding.wrappedValue = nil }) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(binding.wrappedValue == nil)
+            .opacity(binding.wrappedValue == nil ? 0.3 : 1)
+            .help("Clear shortcut")
         }
     }
 }

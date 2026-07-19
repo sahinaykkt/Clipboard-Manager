@@ -65,6 +65,8 @@ class ClipboardMonitor: ObservableObject {
     static let shared = ClipboardMonitor()
 
     @Published var items: [ClipboardItem] = []
+    /// The item whose content is currently on the clipboard (marked in the UI).
+    @Published var lastCopiedID: UUID?
     private var timer: Timer?
     private var lastChangeCount: Int = NSPasteboard.general.changeCount
 
@@ -118,6 +120,8 @@ class ClipboardMonitor: ObservableObject {
             let retainedUnpinned = Array(self.items.filter { !$0.isPinned }.prefix(max(maxItems - 1, 0)))
             let pinned = self.items.filter { $0.isPinned }
             self.items = [item] + retainedUnpinned + pinned
+            // Newly captured content is what's on the clipboard now.
+            self.lastCopiedID = item.id
             self.applySettings()
         }
     }
@@ -136,6 +140,7 @@ class ClipboardMonitor: ObservableObject {
             }
         }
         lastChangeCount = pasteboard.changeCount
+        lastCopiedID = item.id
     }
 
     func deleteItem(_ item: ClipboardItem) {

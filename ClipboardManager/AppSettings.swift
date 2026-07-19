@@ -1,5 +1,10 @@
 import Foundation
+import AppKit
 import ServiceManagement
+
+extension Notification.Name {
+    static let openHotkeyChanged = Notification.Name("openHotkeyChanged")
+}
 
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -8,6 +13,9 @@ final class AppSettings: ObservableObject {
         static let launchAtLogin = "launchAtLogin"
         static let retentionDays = "retentionDays"
         static let maxItems = "maxItems"
+        static let closeOnCopy = "closeOnCopy"
+        static let openHotkey = "openHotkeyData"
+        static let pinHotkey = "pinHotkeyData"
     }
 
     private let defaults: UserDefaults
@@ -47,19 +55,65 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var closeOnCopy: Bool {
+        didSet {
+            guard !isApplyingStoredValues else { return }
+            defaults.set(closeOnCopy, forKey: Keys.closeOnCopy)
+        }
+    }
+
+    @Published var openHotkey: KeyCombo? {
+        didSet {
+            guard !isApplyingStoredValues else { return }
+            store(openHotkey, forKey: Keys.openHotkey)
+            NotificationCenter.default.post(name: .openHotkeyChanged, object: nil)
+        }
+    }
+
+    @Published var pinHotkey: KeyCombo? {
+        didSet {
+            guard !isApplyingStoredValues else { return }
+            store(pinHotkey, forKey: Keys.pinHotkey)
+        }
+    }
+
     private init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
             Keys.launchAtLogin: true,
             Keys.retentionDays: 30,
-            Keys.maxItems: 200
+            Keys.maxItems: 200,
+            Keys.closeOnCopy: false
         ])
 
         isApplyingStoredValues = true
         launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         retentionDays = defaults.integer(forKey: Keys.retentionDays)
         maxItems = defaults.integer(forKey: Keys.maxItems)
+        closeOnCopy = defaults.bool(forKey: Keys.closeOnCopy)
+        openHotkey = AppSettings.loadCombo(from: defaults, key: Keys.openHotkey,
+                                           default: KeyCombo(keyCode: 9, modifiers: [.command, .shift]))
+        pinHotkey = AppSettings.loadCombo(from: defaults, key: Keys.pinHotkey,
+                                          default: KeyCombo(keyCode: 35, modifiers: [.command]))
         isApplyingStoredValues = false
+    }
+
+    // MARK: - KeyCombo persistence
+
+    private func store(_ combo: KeyCombo?, forKey key: String) {
+        if let combo, let data = try? JSONEncoder().encode(combo) {
+            defaults.set(data, forKey: key)
+        } else {
+            // Empty data marks an explicitly-cleared (disabled) shortcut so the
+            // default isn't resurrected on next launch.
+            defaults.set(Data(), forKey: key)
+        }
+    }
+
+    private static func loadCombo(from defaults: UserDefaults, key: String, default def: KeyCombo?) -> KeyCombo? {
+        guard let data = defaults.data(forKey: key) else { return def } // never set → default
+        if data.isEmpty { return nil }                                  // explicitly disabled
+        return try? JSONDecoder().decode(KeyCombo.self, from: data)
     }
 }
 
