@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var selectedID: UUID? = nil
     @State private var copiedID: UUID? = nil
     @State private var followSelection = false
+    @State private var suppressedMouseLocation: NSPoint? = nil
 
     enum FilterType: String, CaseIterable {
         case all = "All"
@@ -123,6 +124,7 @@ struct ContentView: View {
                                     item: item,
                                     selectedID: $selectedID,
                                     copiedID: $copiedID,
+                                    suppressedMouseLocation: $suppressedMouseLocation,
                                     isCurrentClipboard: item.id == monitor.lastCopiedID,
                                     onCopy: { copyItem(item) },
                                     onPin: { monitor.togglePin(item) },
@@ -211,6 +213,7 @@ struct ContentView: View {
         let list = filtered
         guard !list.isEmpty else { return }
         followSelection = true
+        suppressedMouseLocation = NSEvent.mouseLocation
         guard let id = selectedID, let index = list.firstIndex(where: { $0.id == id }) else {
             selectedID = delta > 0 ? list.first?.id : list.last?.id
             return
@@ -223,6 +226,7 @@ struct ContentView: View {
         let list = filtered
         guard let index = list.firstIndex(where: { $0.id == item.id }) else { return }
         followSelection = true
+        suppressedMouseLocation = NSEvent.mouseLocation
         if index + 1 < list.count {
             selectedID = list[index + 1].id
         } else if index - 1 >= 0 {
@@ -254,6 +258,7 @@ struct ContentView: View {
         let item: ClipboardItem
         @Binding var selectedID: UUID?
         @Binding var copiedID: UUID?
+        @Binding var suppressedMouseLocation: NSPoint?
         let isCurrentClipboard: Bool
         let onCopy: () -> Void
         let onPin: () -> Void
@@ -361,8 +366,19 @@ struct ContentView: View {
             }
             .contentShape(Rectangle())
             .onHover { hovering in
+                if let suppressed = suppressedMouseLocation {
+                    if NSEvent.mouseLocation == suppressed {
+                        // Scroll moved this row under a stationary cursor while
+                        // navigating via keyboard — not a real hover, ignore it.
+                        return
+                    }
+                    suppressedMouseLocation = nil
+                }
                 isHovered = hovering
                 if hovering { selectedID = item.id }
+            }
+            .onChange(of: suppressedMouseLocation) { newValue in
+                if newValue != nil { isHovered = false }
             }
             .animation(.easeInOut(duration: 0.15), value: isHovered)
             .animation(.easeInOut(duration: 0.15), value: isSelected)
