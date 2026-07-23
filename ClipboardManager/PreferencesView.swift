@@ -92,8 +92,6 @@ struct PreferencesView: View {
         }
     }
 
-    /// An editable number field paired with a stepper so the value can be typed
-    /// or adjusted with the arrows.
     @ViewBuilder
     private func numberField(value: Binding<Int>, range: ClosedRange<Int>, unit: String) -> some View {
         HStack(spacing: 6) {
@@ -109,7 +107,6 @@ struct PreferencesView: View {
         }
     }
 
-    /// A shortcut recorder with a button to clear (disable) the shortcut.
     @ViewBuilder
     private func shortcutControl(binding: Binding<KeyCombo?>) -> some View {
         HStack(spacing: 6) {

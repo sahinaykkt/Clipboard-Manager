@@ -2,14 +2,8 @@ import SwiftUI
 import AppKit
 import Carbon.HIToolbox
 
-// MARK: - KeyCombo
-
-/// A keyboard shortcut (virtual key code + modifier flags) that is Codable so it
-/// can be stored in UserDefaults, and convertible to Carbon flags for global
-/// hotkey registration.
 struct KeyCombo: Codable, Equatable {
     var keyCode: UInt16
-    /// Raw value of the device-independent `NSEvent.ModifierFlags` subset.
     var modifierRawValue: UInt
 
     init(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
@@ -32,7 +26,6 @@ struct KeyCombo: Codable, Equatable {
         return flags
     }
 
-    /// Whether a live key-down event matches this combo (used for in-app shortcuts).
     func matches(_ event: NSEvent) -> Bool {
         event.keyCode == keyCode &&
         event.modifierFlags.intersection(KeyCombo.relevantFlags) == modifierFlags
@@ -82,12 +75,7 @@ struct ClipboardManagerApp: App {
     }
 }
 
-
-
 class AppDelegate: NSObject, NSApplicationDelegate {
-    /// SwiftUI's `@NSApplicationDelegateAdaptor` wraps this delegate, so
-    /// `NSApp.delegate` is a `SwiftUI.AppDelegate` and casting it to our type
-    /// fails. We keep an explicit reference so views can reach the real delegate.
     static weak var shared: AppDelegate?
 
     var statusItem: NSStatusItem?
@@ -166,9 +154,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if let button = statusItem?.button {
                     popover.contentViewController = NSHostingController(rootView: ContentView())
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                    // Activate so the popover window becomes key and its search
-                    // field / keyboard navigation can receive events (needed when
-                    // opened via the global hotkey rather than a click).
                     NSApp.activate(ignoringOtherApps: true)
                     popover.contentViewController?.view.window?.makeKey()
                 }
@@ -176,7 +161,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Closes the popover if it is currently shown (used by "Close after copy").
     func dismissPopover() {
         DispatchQueue.main.async { [weak self] in
             self?.popover?.close()
@@ -233,10 +217,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// MARK: - Global Hotkey (Carbon)
-
-/// Registers a single system-wide hotkey using Carbon's `RegisterEventHotKey`,
-/// which works inside the App Sandbox and does not require Accessibility access.
 final class GlobalHotkeyManager {
     static let shared = GlobalHotkeyManager()
 
@@ -244,12 +224,10 @@ final class GlobalHotkeyManager {
 
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
-    private let hotKeyID = EventHotKeyID(signature: 0x434C_4950 /* 'CLIP' */, id: 1)
+    private let hotKeyID = EventHotKeyID(signature: 0x434C_4950 , id: 1)
 
     private init() {}
 
-    /// Registers `combo` as the global hotkey, replacing any previous one.
-    /// Passing `nil` simply unregisters (shortcut disabled).
     func register(_ combo: KeyCombo?) {
         unregister()
         guard let combo, combo.carbonModifiers != 0 else { return }
@@ -313,10 +291,6 @@ final class GlobalHotkeyManager {
     }
 }
 
-// MARK: - Shortcut Recorder
-
-/// A small control that records a keyboard shortcut when clicked. Bound to an
-/// optional `KeyCombo`; used in Preferences for the global and pin shortcuts.
 struct ShortcutRecorder: NSViewRepresentable {
     @Binding var combo: KeyCombo?
 
@@ -356,14 +330,13 @@ final class ShortcutRecorderNSView: NSView {
     override func keyDown(with event: NSEvent) {
         guard isRecording else { super.keyDown(with: event); return }
 
-        if event.keyCode == 53 { // Escape cancels recording
+        if event.keyCode == 53 {
             stopRecording()
             return
         }
 
         let modifiers = event.modifierFlags.intersection(KeyCombo.relevantFlags)
         guard !modifiers.isEmpty else {
-            // Require at least one modifier so shortcuts are safe globally.
             NSSound.beep()
             return
         }

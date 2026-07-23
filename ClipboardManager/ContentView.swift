@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var selectedFilter: FilterType = .all
     @State private var selectedID: UUID? = nil
     @State private var copiedID: UUID? = nil
+    @State private var followSelection = false
 
     enum FilterType: String, CaseIterable {
         case all = "All"
@@ -40,7 +41,7 @@ struct ContentView: View {
             return matchesFilter && matchesSearch
         }
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -61,9 +62,9 @@ struct ContentView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            
+
             Divider()
-            
+
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
@@ -82,7 +83,7 @@ struct ContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(Color(NSColor.controlBackgroundColor))
-            
+
             HStack(spacing: 4) {
                 ForEach(FilterType.allCases, id: \.self) { f in
                     Button(action: { selectedFilter = f }) {
@@ -100,9 +101,9 @@ struct ContentView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            
+
             Divider()
-            
+
             if filtered.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "tray")
@@ -133,7 +134,8 @@ struct ContentView: View {
                         .padding(.vertical, 4)
                     }
                     .onChange(of: selectedID) { id in
-                        guard let id else { return }
+                        defer { followSelection = false }
+                        guard followSelection, let id else { return }
                         withAnimation { proxy.scrollTo(id, anchor: .center) }
                     }
                 }
@@ -167,11 +169,7 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Keyboard handling
-
-    /// Returns true if the event was consumed.
     private func handleKey(_ event: NSEvent) -> Bool {
-        // Pin / unpin the selected item.
         if let pin = settings.pinHotkey, pin.matches(event) {
             if let item = selectedItem { monitor.togglePin(item) }
             return true
@@ -180,24 +178,22 @@ struct ContentView: View {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
         switch event.keyCode {
-        case 125: // Down arrow
+        case 125:
             moveSelection(by: 1)
             return true
-        case 126: // Up arrow
+        case 126:
             moveSelection(by: -1)
             return true
-        case 36, 76: // Return / keypad Enter
+        case 36, 76:
             if let item = selectedItem { copyItem(item) }
             return true
-        case 51: // Delete / Backspace
-            // Delete the selected item when not editing the search field
-            // (search empty), or always with Cmd held.
+        case 51:
             if modifiers.contains(.command) || searchText.isEmpty {
                 deleteSelected()
                 return true
             }
-            return false // let it edit the search text
-        case 117: // Forward delete (fn + Delete)
+            return false
+        case 117:
             deleteSelected()
             return true
         default:
@@ -214,6 +210,7 @@ struct ContentView: View {
     private func moveSelection(by delta: Int) {
         let list = filtered
         guard !list.isEmpty else { return }
+        followSelection = true
         guard let id = selectedID, let index = list.firstIndex(where: { $0.id == id }) else {
             selectedID = delta > 0 ? list.first?.id : list.last?.id
             return
@@ -222,10 +219,10 @@ struct ContentView: View {
         selectedID = list[next].id
     }
 
-    /// Moves selection to a sensible neighbour before deleting `item`.
     private func selectNeighbour(of item: ClipboardItem) {
         let list = filtered
         guard let index = list.firstIndex(where: { $0.id == item.id }) else { return }
+        followSelection = true
         if index + 1 < list.count {
             selectedID = list[index + 1].id
         } else if index - 1 >= 0 {
@@ -236,7 +233,6 @@ struct ContentView: View {
     }
 
     private func openPreferences() {
-        // Dispatch so the popover isn't mid-dismiss while we open the window.
         DispatchQueue.main.async {
             AppDelegate.shared?.showPreferencesWindow()
         }
@@ -254,7 +250,6 @@ struct ContentView: View {
         }
     }
 
-
     struct ClipboardRow: View {
         let item: ClipboardItem
         @Binding var selectedID: UUID?
@@ -268,7 +263,7 @@ struct ContentView: View {
 
         var isSelected: Bool { selectedID == item.id }
         var isCopied: Bool { copiedID == item.id }
-        
+
         var body: some View {
             HStack(spacing: 10) {
                 HStack(spacing: 10) {
@@ -313,7 +308,7 @@ struct ContentView: View {
                     onCopy()
                 }
                 .help("Click to copy to clipboard")
-                
+
                 if isHovered || isCopied || isSelected {
                     HStack(spacing: 6) {
                         if isCopied {
@@ -328,7 +323,7 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                             .foregroundColor(.secondary)
                             .help("Copy")
-                            
+
                             Button(action: onPin) {
                                 Image(systemName: item.isPinned ? "pin.fill" : "pin")
                                     .font(.system(size: 12))
@@ -336,7 +331,7 @@ struct ContentView: View {
                             .buttonStyle(.plain)
                             .foregroundColor(item.isPinned ? .orange : .secondary)
                             .help(item.isPinned ? "Unpin" : "Pin")
-                            
+
                             Button(action: onDelete) {
                                 Image(systemName: "trash")
                                     .font(.system(size: 12))
@@ -367,8 +362,6 @@ struct ContentView: View {
             .contentShape(Rectangle())
             .onHover { hovering in
                 isHovered = hovering
-                // Hovering makes the item the current selection so mouse and
-                // keyboard navigation share a single highlight.
                 if hovering { selectedID = item.id }
             }
             .animation(.easeInOut(duration: 0.15), value: isHovered)
@@ -389,9 +382,6 @@ struct ContentView: View {
     }
 }
 
-/// Installs a local key-down monitor that is only active while this view's
-/// window is key, so keyboard navigation works in the popover without
-/// intercepting events destined for other windows (e.g. Preferences).
 struct KeyCaptureView: NSViewRepresentable {
     let handler: (NSEvent) -> Bool
 

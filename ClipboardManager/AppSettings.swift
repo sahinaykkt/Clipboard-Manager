@@ -98,21 +98,17 @@ final class AppSettings: ObservableObject {
         isApplyingStoredValues = false
     }
 
-    // MARK: - KeyCombo persistence
-
     private func store(_ combo: KeyCombo?, forKey key: String) {
         if let combo, let data = try? JSONEncoder().encode(combo) {
             defaults.set(data, forKey: key)
         } else {
-            // Empty data marks an explicitly-cleared (disabled) shortcut so the
-            // default isn't resurrected on next launch.
             defaults.set(Data(), forKey: key)
         }
     }
 
     private static func loadCombo(from defaults: UserDefaults, key: String, default def: KeyCombo?) -> KeyCombo? {
-        guard let data = defaults.data(forKey: key) else { return def } // never set → default
-        if data.isEmpty { return nil }                                  // explicitly disabled
+        guard let data = defaults.data(forKey: key) else { return def }
+        if data.isEmpty { return nil }
         return try? JSONDecoder().decode(KeyCombo.self, from: data)
     }
 }
