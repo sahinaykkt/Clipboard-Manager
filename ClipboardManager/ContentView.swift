@@ -180,6 +180,17 @@ struct ContentView: View {
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
 
         switch event.keyCode {
+        case 53:
+            AppDelegate.shared?.dismissPopover()
+            return true
+        case 123:
+            guard searchText.isEmpty else { return false }
+            moveFilter(by: -1)
+            return true
+        case 124:
+            guard searchText.isEmpty else { return false }
+            moveFilter(by: 1)
+            return true
         case 125:
             moveSelection(by: 1)
             return true
@@ -201,6 +212,29 @@ struct ContentView: View {
         default:
             return false
         }
+    }
+
+    private func moveFilter(by delta: Int) {
+        let filters = FilterType.allCases
+        guard let currentIndex = filters.firstIndex(of: selectedFilter) else { return }
+
+        let nextIndex = (currentIndex + delta + filters.count) % filters.count
+        let nextFilter = filters[nextIndex]
+        selectedFilter = nextFilter
+
+        let nextItems = monitor.items.filter { item in
+            switch nextFilter {
+            case .all: return true
+            case .text: return item.type == .text
+            case .image: return item.type == .image
+            case .pinned: return item.isPinned
+            }
+        }
+
+        if let selectedID, nextItems.contains(where: { $0.id == selectedID }) { return }
+        followSelection = true
+        suppressedMouseLocation = NSEvent.mouseLocation
+        selectedID = nextItems.first?.id
     }
 
     private func deleteSelected() {

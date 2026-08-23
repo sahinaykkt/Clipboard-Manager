@@ -75,7 +75,7 @@ struct ClipboardManagerApp: App {
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     static weak var shared: AppDelegate?
 
     var statusItem: NSStatusItem?
@@ -83,6 +83,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var mainWindow: NSWindow?
     var preferencesWindow: NSWindow?
     private lazy var statusMenu: NSMenu = makeStatusMenu()
+    private var previouslyActiveApplication: NSRunningApplication?
+    private var shouldRestoreFocusAfterPopoverCloses = false
+    private var focusTransitionID = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -113,6 +116,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let popover = NSPopover()
         popover.contentSize = NSSize(width: 380, height: 520)
         popover.behavior = .transient
+        popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: ContentView())
         self.popover = popover
 
@@ -138,6 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if event.type == .rightMouseUp {
+            cancelPendingFocusRestore()
             popover?.performClose(nil)
             NSMenu.popUpContextMenu(statusMenu, with: event, for: sender)
             return
@@ -149,9 +154,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func togglePopover() {
         if let popover = popover {
             if popover.isShown {
-                popover.performClose(nil)
+                closePopoverAndRestoreFocus()
             } else {
                 if let button = statusItem?.button {
+                    rememberFrontmostApplication()
                     popover.contentViewController = NSHostingController(rootView: ContentView())
                     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                     NSApp.activate(ignoringOtherApps: true)
@@ -161,9 +167,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func popoverDidClose(_ notification: Notification) {
+        restorePreviousApplicationIfAppropriate()
+    }
+
     func dismissPopover() {
-        DispatchQueue.main.async { [weak self] in
-            self?.popover?.close()
+        if Thread.isMainThread {
+            closePopoverAndRestoreFocus()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.closePopoverAndRestoreFocus()
+            }
         }
     }
 
@@ -172,6 +186,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showPreferencesWindow() {
+        cancelPendingFocusRestore()
         popover?.performClose(nil)
         if preferencesWindow == nil {
             let window = NSWindow(
@@ -191,6 +206,69 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesWindow?.center()
         preferencesWindow?.makeKeyAndOrderFront(nil)
         preferencesWindow?.orderFrontRegardless()
+    }
+
+    private func rememberFrontmostApplication() {
+        focusTransitionID += 1
+        let currentProcessID = ProcessInfo.processInfo.processIdentifier
+        guard let frontmostApplication = NSWorkspace.shared.frontmostApplication,
+              frontmostApplication.processIdentifier != currentProcessID else {
+            previouslyActiveApplication = nil
+            shouldRestoreFocusAfterPopoverCloses = false
+            return
+        }
+
+        previouslyActiveApplication = frontmostApplication
+        shouldRestoreFocusAfterPopoverCloses = true
+    }
+
+    private func cancelPendingFocusRestore() {
+        focusTransitionID += 1
+        previouslyActiveApplication = nil
+        shouldRestoreFocusAfterPopoverCloses = false
+    }
+
+    private func closePopoverAndRestoreFocus() {
+        let previousApplication = takePreviousApplicationForRestore()
+        popover?.close()
+
+        guard let previousApplication,
+              !previousApplication.isTerminated else { return }
+
+        let currentProcessID = ProcessInfo.processInfo.processIdentifier
+        let frontmostProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        guard frontmostProcessID == currentProcessID else { return }
+
+        previousApplication.activate(options: [.activateIgnoringOtherApps])
+    }
+
+    private func takePreviousApplicationForRestore() -> NSRunningApplication? {
+        guard shouldRestoreFocusAfterPopoverCloses,
+              let previousApplication = previouslyActiveApplication else { return nil }
+
+        focusTransitionID += 1
+        previouslyActiveApplication = nil
+        shouldRestoreFocusAfterPopoverCloses = false
+        return previousApplication
+    }
+
+    private func restorePreviousApplicationIfAppropriate() {
+        guard let previousApplication = takePreviousApplicationForRestore() else { return }
+        let transitionID = focusTransitionID
+
+        // Continue on the next main-loop turn so an outside click can activate
+        // its target first, without adding a perceptible keyboard-close delay.
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.focusTransitionID == transitionID,
+                  self.popover?.isShown != true,
+                  !previousApplication.isTerminated,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier else {
+                return
+            }
+
+            previousApplication.activate(options: [.activateIgnoringOtherApps])
+        }
     }
 
     @objc private func quitApplication() {
